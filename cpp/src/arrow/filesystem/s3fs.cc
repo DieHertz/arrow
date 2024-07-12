@@ -3137,7 +3137,7 @@ namespace {
 
 struct AwsInstance {
   AwsInstance() : is_initialized_(false), is_finalized_(false) {}
-  ~AwsInstance() { Finalize(/*from_destructor=*/true); }
+  ~AwsInstance() { Finalize(); }
 
   // Returns true iff the instance was newly initialized with `options`
   Result<bool> EnsureInitialized(const S3GlobalOptions& options) {
@@ -3163,18 +3163,13 @@ struct AwsInstance {
 
   bool IsFinalized() { return is_finalized_; }
 
-  void Finalize(bool from_destructor = false) {
+  void Finalize() {
     if (is_finalized_.exchange(true)) {
       // Already finalized
       return;
     }
     if (is_initialized_.exchange(false)) {
       // Was initialized
-      if (from_destructor) {
-        ARROW_LOG(WARNING)
-            << " arrow::fs::FinalizeS3 was not called even though S3 was initialized.  "
-               "This could lead to a segmentation fault at exit";
-      }
       GetClientFinalizer()->Finalize();
 #ifdef ARROW_S3_HAS_S3CLIENT_CONFIGURATION
       EndpointProviderCache::Instance()->Reset();
@@ -3244,6 +3239,8 @@ AwsInstance* GetAwsInstance() {
 }
 
 Result<bool> EnsureAwsInstanceInitialized(const S3GlobalOptions& options) {
+  // ensure ClientFinalizer is initialized before AwsInstance
+  [[maybe_unused]] const auto client_finalizer = GetClientFinalizer();
   return GetAwsInstance()->EnsureInitialized(options);
 }
 
